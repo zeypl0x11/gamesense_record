@@ -1,0 +1,50 @@
+--// Libraries
+local http, discord = require('gamesense/http'), require('gamesense/discord_webhooks')
+
+--// Discord variables
+local webhook_client = discord.new('WEBHOOK_URL')
+
+--// URL variables
+local base_url = '[url]http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=%s&steamids=%17.0f[/url]'
+local steam_api_key = 'STEAM_API_KEY'
+local base_profile_url = '[url]https://steamcommunity.com/profiles/%17.0f[/url]'
+
+--// Other variables
+local hitgroup_names = {[0] = "body", "head", "chest", "stomach", "left arm", "right arm", "left leg", "right leg", "neck", "?", "gear"}
+
+--// Create embed function (with template)
+local function create_embed(reason, hitbox, avatar, id, steam_64)
+    -- Get the system time
+    local h, m, s = client.system_time()
+
+    -- Create a new embed object
+    local embed = discord.newEmbed()
+
+    -- Set the needed properties
+    embed:setTitle('Missed shot on linked player');embed:setColor(15158332)
+    embed:setDescription( panorama.open().GameStateAPI.GetServerName() )
+    embed:setThumbnail( avatar )
+    embed:setFooter(entity.get_player_name(id) .. ' | ' .. steam_64 .. ' | ' .. string.format('%s:%s:%s', h, m, s))
+    embed:addField('Reason', reason == '?' and 'resolver' or reason, true)
+    embed:addField('Hitbox', hitgroup_names[hitbox] or '?', true)
+    embed:setURL( string.format(base_profile_url, steam_64) )
+
+    -- Return the embed object
+    return embed
+end
+
+--// Callbacks
+local function aim_miss(data)
+    local steam_64 = panorama.open().GameStateAPI.GetPlayerXuidStringFromEntIndex(data.target)
+    http.get( string.format(base_url, steam_api_key, steam_64), function(_, response)
+        print('fire webhook')
+        local avatar = ''
+        local parsed_body = json.parse(response.body)
+        if parsed_body and parsed_body.response and parsed_body.response.players and parsed_body.response.players[1] and parsed_body.response.players[1].avatarfull then
+            avatar = parsed_body.response.players[1].avatarfull
+        end
+        local embed = create_embed(data.reason, data.hitgroup, avatar, data.target, steam_64)
+        webhook_client:send(embed)
+    end )
+end
+client.set_event_callback('aim_miss', aim_miss)
